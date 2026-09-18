@@ -1,4 +1,72 @@
-const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys')
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys')
+const Pino = require('pino')
+const fs = require('fs')
+const ExcelJS = require('exceljs')
+const http = require('http')
+
+http.createServer((_,res)=>res.end('BOT AKTIF')).listen(process.env.PORT||3000)
+
+const PHONE_BOT = (process.env.PHONE_NUMBER||'6285161112562').replace(/[^0-9]/g,'')
+const ADMIN_RAW = (process.env.ADMIN_NUMBER||'').replace(/[^0-9]/g,'')
+const ADMIN_LIST = ['114852425167035@lid', ADMIN_RAW+'@lid', ADMIN_RAW+'@s.whatsapp.net'].filter(j=>j&&!j.startsWith('@'))
+
+let pairingRequested = false
+
+async function kirimKeAdmin(sock, pesan){
+  for(const jid of ADMIN_LIST){
+    try{ await sock.sendMessage(jid,{text:pesan}); return }catch(e){}
+  }
+}
+
+async function startBot(){
+  // hapus auth rusak otomatis
+  if(fs.existsSync('auth') && !fs.existsSync('auth/creds.json')){
+    fs.rmSync('auth',{recursive:true,force:true})
+  }
+  const { state, saveCreds } = await useMultiFileAuthState('auth')
+  const sock = makeWASocket({ auth: state, logger: Pino({level:'silent'}), printQRInTerminal:false, browser:['Chrome','Chrome','1.0'] })
+  sock.ev.on('creds.update', saveCreds)
+
+  sock.ev.on('connection.update', async(u)=>{
+    const { connection, lastDisconnect } = u
+    if(connection==='connecting' && !state.creds.registered && !pairingRequested){
+      pairingRequested=true
+      setTimeout(async()=>{
+        try{
+          console.log(`Minta kode untuk ${PHONE_BOT}...`)
+          let code = await sock.requestPairingCode(PHONE_BOT)
+          code = code?.match(/.{1,4}/g)?.join('-')||code
+          console.log(`\n============================\nKODE PAIRING: ${code}\nMasukin di WA: ${PHONE_BOT}\nTanpa strip ya\n============================\n`)
+        }catch(e){
+          console.log('Gagal pairing:',e.message)
+          pairingRequested=false
+        }
+      },8000)
+    }
+    if(connection==='open'){
+      console.log('✅ BOT REAL TIME AKTIF 24 JAM')
+      if(!fs.existsSync('Rekap_LIVE.xlsx')){ const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet('Rekap'); ws.addRow(['Tanggal','Jam','Dari','Pesan']); await wb.xlsx.writeFile('Rekap_LIVE.xlsx') }
+      await kirimKeAdmin(sock,'✅ BOT PUSAT IMEI AKTIF 24 JAM')
+    }
+    if(connection==='close'){
+      const status = lastDisconnect?.error?.output?.statusCode
+      console.log('Putus code:',status)
+      if(status!==DisconnectReason.loggedOut){ pairingRequested=false; startBot() }
+    }
+  })
+
+  sock.ev.on('messages.upsert', async({messages})=>{
+    const msg=messages[0]; if(!msg.message||msg.key.fromMe) return
+    const from=msg.key.remoteJid; const text=(msg.message.conversation||msg.message.extendedTextMessage?.text||'').trim()
+    console.log(`Pesan ${from}: ${text}`)
+    try{ const wb=new ExcelJS.Workbook(); await wb.xlsx.readFile('Rekap_LIVE.xlsx'); wb.getWorksheet('Rekap').addRow([new Date().toLocaleDateString(),new Date().toLocaleTimeString(),from,text]); await wb.xlsx.writeFile('Rekap_LIVE.xlsx') }catch(e){}
+    if(text.toLowerCase()==='.ping') await sock.sendMessage(from,{text:`✅ Bot ON`})
+    if(!from.includes('@g.us') && text && !text.startsWith('.')){
+       await kirimKeAdmin(sock,`📩 ORDER\nDari: ${from}\nIsi: ${text}`)
+    }
+  })
+}
+startBot()const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys')
 const Pino = require('pino')
 const fs = require('fs')
 const ExcelJS = require('exceljs')
