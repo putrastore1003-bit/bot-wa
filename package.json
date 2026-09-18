@@ -1,14 +1,1 @@
-{
-  "name": "unlock-signal-bot",
-  "version": "1.0.0",
-  "main": "bot.js",
-  "scripts": {
-    "start": "node bot.js"
-  },
-  "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.8",
-    "exceljs": "^4.4.0",
-    "pino": "^8.19.0",
-    "qrcode-terminal": "^0.12.0"
-  }
-}
+{"name":"bot","main":"bot.js","scripts":{"start":"node bot.js"},"dependencies":{"@whiskeysockets/baileys":"^6.7.8","pino":"^8.17.2","exceljs":"^4.4.0"}}
