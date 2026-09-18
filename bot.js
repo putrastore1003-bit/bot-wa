@@ -1,8 +1,7 @@
 const fs = require('fs')
 if(fs.existsSync('auth') && !fs.existsSync('auth/creds.json')){
   fs.rmSync('auth',{recursive:true,force:true})
-}
-const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, delay } = require('@whiskeysockets/baileys')
+}const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, delay } = require('@whiskeysockets/baileys')
 const P = require('pino')
 const fs = require('fs')
 const ExcelJS = require('exceljs')
