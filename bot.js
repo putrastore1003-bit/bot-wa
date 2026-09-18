@@ -1,9 +1,9 @@
 const fs = require('fs')
 if(fs.existsSync('auth') && !fs.existsSync('auth/creds.json')){
   fs.rmSync('auth',{recursive:true,force:true})
-}const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, delay } = require('@whiskeysockets/baileys')
+}
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, delay } = require('@whiskeysockets/baileys')
 const P = require('pino')
-const fs = require('fs')
 const ExcelJS = require('exceljs')
 const http = require('http')
 http.createServer((a,b)=>b.end('BOT FINAL ON')).listen(process.env.PORT||3000)
@@ -40,23 +40,17 @@ async function start(){
      const kode = await sock.requestPairingCode(NOMOR_BOT)
      console.log('============================')
      console.log(`KODE PAIRING BOS: ${kode}`)
-     console.log('Kode tahan 60 detik, masukin sekarang!')
+     console.log('Tahan 60 detik, masukin sekarang!')
      console.log('WA > Perangkat Tertaut > Tautkan dg nomor telp')
      console.log('============================')
-   }catch(e){
-     console.log('Gagal minta kode:', e.message)
-   }
+   }catch(e){ console.log('Gagal:', e.message) }
  }
 
  sock.ev.on('connection.update', async (u)=>{
-   if(u.connection==='open'){
-     console.log('BOT AKTIF FINAL')
-   }
+   if(u.connection==='open') console.log('BOT AKTIF FINAL')
    if(u.connection==='close'){
-     const registered = state.creds.registered
-     console.log(`CLOSE, registered=${registered}, tunggu 10 detik...`)
-     // kalau belum pairing, kasih waktu 60 detik jangan langsung reconnect
-     await delay(registered? 3000 : 15000)
+     console.log('CLOSE, tunggu 15 detik...')
+     await delay(15000)
      start()
    }
  })
@@ -67,15 +61,12 @@ async function start(){
    const text = m.message.conversation || m.message.extendedTextMessage?.text || ''
    const imei = text.match(/\b\d{15}\b/g)
    if(imei){
-     try{
-       const wb = new ExcelJS.Workbook()
-       await wb.xlsx.readFile(FILE_EXCEL)
-       const ws = wb.getWorksheet('Rekap')
-       ws.addRow([new Date().toLocaleString('id-ID'), m.pushName||m.key.remoteJid, text, imei.join(',')])
-       await wb.xlsx.writeFile(FILE_EXCEL)
-       await sock.sendMessage(m.key.remoteJid, {text: `✅ IMEI ${imei.join(', ')} dicatat!`})
-       for(const a of ADMIN) await sock.sendMessage(a, {text: `IMEI Baru dari ${m.pushName}: ${imei.join(', ')}`})
-     }catch(e){ console.log(e.message) }
+     const wb = new ExcelJS.Workbook()
+     await wb.xlsx.readFile(FILE_EXCEL)
+     const ws = wb.getWorksheet('Rekap')
+     ws.addRow([new Date().toLocaleString('id-ID'), m.pushName||m.key.remoteJid, text, imei.join(',')])
+     await wb.xlsx.writeFile(FILE_EXCEL)
+     await sock.sendMessage(m.key.remoteJid, {text: `✅ IMEI ${imei.join(', ')} dicatat!`})
    }
  })
 }
