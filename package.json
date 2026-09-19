@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "main": "bot.js",
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.18",
-    "pino": "^9.0.0",
-    "qrcode": "^1.5.3"
+    "@whiskeysockets/baileys": "6.7.18",
+    "pino": "9.6.0",
+    "qrcode": "1.5.3"
   }
 }
