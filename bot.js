@@ -2,7 +2,8 @@ const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysocket
 const Pino = require('pino')
 const fs = require('fs')
 const ExcelJS = require('exceljs')
-const qrcode = require('qrcode-terminal')
+const QRCode = require('qrcode')
+const express = require('express')
 
 const ADMIN_NUMBER = '6285642901005@s.whatsapp.net'
 const ADMIN_LID = '74882771615980@lid'
@@ -14,7 +15,6 @@ function saveDB(){
   fs.writeFileSync('orders.json', JSON.stringify(orders,null,2))
   updateLiveExcel()
 }
-
 const pending = {}
 const last4 = (imei) => imei.slice(-4)
 const statusHuruf = (s) => { if(s==='ANTRI') return 'A'; if(s==='PROSES') return 'P'; if(s==='DONE') return 'D'; if(s==='GAGAL') return 'G'; return s }
@@ -25,7 +25,31 @@ const PAKET = {
   '3': { nama: '1 Bulan Fast', deskripsi: 'Proses 10menit - 1Jam\nSinyal Aktif 1 Bulan ~ Bergaransi' }
 }
 
-function welcomeText(name){ return `Halo bos ${name} 👋\n📌 ORDER: Kirim IMEI 15 angka\n📌 CEK STATUS: Cek status 123456789012345` }
+// --- WEB SERVER BUAT SCAN QR ---
+let lastQR = null
+let isConnected = false
+const app = express()
+const PORT = process.env.PORT || 3000
+
+app.get('/', async (req,res)=>{
+  if(isConnected){
+    return res.send(`<h1>✅ BOT AKTIF - ${orders.length} Order</h1><p>File: Rekap_LIVE.xlsx</p>`)
+  }
+  if(!lastQR){
+    return res.send('<h1>⏳ Menunggu QR... Refresh 5 detik</h1><script>setTimeout(()=>location.reload(),5000)</script>')
+  }
+  res.send(`
+    <html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+    <body style="text-align:center;font-family:sans-serif;padding:20px">
+    <h2>SCAN QR BOT IMEI</h2>
+    <img src="${lastQR}" style="width:90%;max-width:380px;border:8px solid #000" />
+    <p>QR ganti 20 detik, halaman auto-refresh</p>
+    <p><b>WA > Perangkat Tertaut > Tautkan Perangkat</b></p>
+    <script>setTimeout(()=>location.reload(),20000)</script>
+    </body></html>
+  `)
+})
+app.listen(PORT, ()=> console.log('Web QR jalan di port '+PORT))
 
 // REAL TIME EXCEL
 async function updateLiveExcel(){
@@ -47,10 +71,9 @@ async function updateLiveExcel(){
     sheet.getRow(1).fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF00FF00'} }
     orders.forEach(o=> sheet.addRow({ id:o.id, imei:o.imei, last4:last4(o.imei), paket:o.paket, huruf:statusHuruf(o.status), status:o.status, customerName:o.customerName, tanggal:o.tanggal, alasan:o.alasan||'' }))
     await workbook.xlsx.writeFile('Rekap_LIVE.xlsx')
-    console.log(`📊 LIVE updated: ${orders.length} order - ${new Date().toLocaleTimeString()}`)
+    console.log(`📊 LIVE updated: ${orders.length} order`)
   }catch(e){ console.log('Gagal update LIVE', e.message) }
 }
-
 async function buatRekapExcel(){
   if(!fs.existsSync('Rekap_LIVE.xlsx')) await updateLiveExcel()
   const file = `Rekap_${new Date().toISOString().slice(0,10)}_${Date.now().toString().slice(-4)}.xlsx`
@@ -60,21 +83,25 @@ async function buatRekapExcel(){
 
 async function startBot(){
   const { state, saveCreds } = await useMultiFileAuthState('auth')
-  const sock = makeWASocket({ auth: state, logger: Pino({level:'silent'}) })
+  const sock = makeWASocket({ auth: state, logger: Pino({level:'silent'}), browser: ['Bot IMEI','Chrome','1.0'] })
   sock.ev.on('creds.update', saveCreds)
 
-  sock.ev.on('connection.update', (u)=>{
+  sock.ev.on('connection.update', async (u)=>{
     if(u.qr){
-      console.log('=== SCAN QR INI DI WA BOS ===')
-      qrcode.generate(u.qr, {small: true})
+      lastQR = await QRCode.toDataURL(u.qr) // JADI GAMBAR BISA DI SCAN
+      isConnected = false
+      console.log('QR BARU SIAP - Buka https://bot-wa-production-1d7c.up.railway.app untuk scan')
     }
     if(u.connection==='open'){
+      isConnected = true
+      lastQR = null
       console.log(`✅ BOT REAL TIME AKTIF 24 JAM`)
       updateLiveExcel()
     }
     if(u.connection==='close'){
+      isConnected = false
       console.log('Koneksi putus, reconnect...')
-      startBot()
+      setTimeout(startBot, 3000)
     }
   })
 
@@ -90,7 +117,7 @@ async function startBot(){
     if(!isAdmin){
       if(lower.startsWith('cek status') || lower.startsWith('cekstatus') || lower.startsWith('cek ') || lower.startsWith('status ')){
         const imeiMatch = text.match(/\d{15}/)
-        if(!imeiMatch){ await sock.sendMessage(from, { text: `❌ Format: Cek status 15angka\n${welcomeText(name)}` }); return }
+        if(!imeiMatch){ await sock.sendMessage(from, { text: `❌ Format: Cek status 15angka` }); return }
         const imei = imeiMatch[0]
         const o = orders.filter(x=>x.imei===imei).slice(-1)[0]
         if(!o){ await sock.sendMessage(from, { text: `❌ IMEI...${last4(imei)} tidak ketemu` }); return }
@@ -111,7 +138,7 @@ async function startBot(){
       }
       if(/^\d{15}$/.test(text)){ pending[from] = text; await sock.sendMessage(from, { text: `📱 IMEI OK: ${text}\n\n1️⃣ ${PAKET['1'].nama}\n${PAKET['1'].deskripsi}\n\n2️⃣ ${PAKET['2'].nama}\n${PAKET['2'].deskripsi}\n\n3️⃣ ${PAKET['3'].nama}\n${PAKET['3'].deskripsi}\n\nBalas 1/2/3` }); return }
       if(/^\d+$/.test(text) && text.length!==15){ await sock.sendMessage(from, { text: `❌ IMEI SALAH! Harus 15 angka` }); return }
-      if(!pending[from]){ await sock.sendMessage(from, { text: welcomeText(name) }) }
+      if(!pending[from]){ await sock.sendMessage(from, { text: `Halo bos ${name} 👋\n📌 ORDER: Kirim IMEI 15 angka\n📌 CEK STATUS: Cek status 123456789012345` }) }
     }
 
     if(isAdmin){
@@ -123,7 +150,7 @@ async function startBot(){
             document: { url: `./${file}` },
             mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             fileName: file,
-            caption: `📊 REKAP REAL TIME\nTotal: ${orders.length}\nUpdate: ${new Date().toLocaleString('id-ID')}\nFile LIVE: Rekap_LIVE.xlsx`
+            caption: `📊 REKAP REAL TIME\nTotal: ${orders.length}\nUpdate: ${new Date().toLocaleString('id-ID')}`
           })
         }catch(e){ await sock.sendMessage(from, { text: `❌ Gagal: ${e.message}` }) }
         return
